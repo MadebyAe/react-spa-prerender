@@ -1,3 +1,5 @@
+const os = require('os');
+
 module.exports = function (options) {
   const engine = {};
 
@@ -13,6 +15,7 @@ module.exports = function (options) {
     routes: options.routes || [],
     port: options.port || 3000,
     buildDirectory: options.buildDirectory || './build',
+    concurrency: options.concurrency || Math.min(os.cpus().length, 4),
     engine
   };
 };

@@ -94,23 +94,38 @@ async function getHTMLfromPuppeteerPage(browser, pageUrl, options) {
  * @param {string[]} routes
  * @param {string} dir
  * @param {object} engine
+ * @param {number} concurrency
  * @returns {number|undefined}
  */
-async function runPuppeteer(baseUrl, routes, dir, engine) {
+async function runPuppeteer(baseUrl, routes, dir, engine, concurrency) {
   const browser = await puppeteer.launch(engine.launchOptions);
-  for (let i = 0; i < routes.length; i++) {
-    try {
-      console.log(`Processing route "${routes[i]}"`);
-      const html = await getHTMLfromPuppeteerPage(browser, `${baseUrl}${routes[i]}`, engine.gotoOptions);
-      if (html) createNewHTMLPage(routes[i], html, dir);
-      else return 0;
-    } catch (err) {
-      throw new Error(`Error: Failed to process route "${routes[i]}"\nMessage: ${err}`);
+  const queue = [...routes];
+  let failed = false;
+
+  async function worker() {
+    while (queue.length) {
+      const route = queue.shift();
+
+      try {
+        console.log(`Processing route "${route}"`);
+        const html = await getHTMLfromPuppeteerPage(browser, `${baseUrl}${route}`, engine.gotoOptions);
+        if (html) await createNewHTMLPage(route, html, dir);
+        else failed = true;
+      } catch (err) {
+        throw new Error(`Error: Failed to process route "${route}"\nMessage: ${err}`);
+      }
     }
   }
 
-  await browser.close();
-  return;
+  const workers = Array.from({ length: Math.min(concurrency, routes.length) }, worker);
+
+  try {
+    await Promise.all(workers);
+  } finally {
+    await browser.close();
+  }
+
+  return failed ? 0 : undefined;
 }
 
 async function run(config) {
@@ -119,7 +134,7 @@ async function run(config) {
 
   if (!staticServerURL) return 0;
 
-  await runPuppeteer(staticServerURL, options.routes, options.buildDirectory, options.engine);
+  await runPuppeteer(staticServerURL, options.routes, options.buildDirectory, options.engine, options.concurrency);
   console.log('Finish react-spa-prerender tasks!');
   process.exit();
 }
